@@ -2,7 +2,7 @@ import feedparser
 import requests
 import os
 import json
-from bs4 import BeautifulSoup  # 新增导入
+from bs4 import BeautifulSoup
 
 # ===================== 配置区域 =====================
 # 科技新闻 RSS（选一个稳定的）
@@ -97,10 +97,10 @@ def llm_summary(api_key, raw_news, raw_github):
         print("警告：DeepSeek API Key 未配置，将使用备用方案")
         return None
 
-    # 构建 Prompt（已修改 Star 条件为 >50）
+    # 构建 Prompt（已移除 Star>50 的限制，改为显示星标数量）
     prompt = f"""你是技术资讯整理助手，严格按照要求处理信息：
 1. 筛选今日高价值科技、AI、开源相关资讯，剔除广告、消费数码无关资讯，每条附带原文链接；
-2. GitHub项目只保留Star>50的仓库；格式：项目名称 ⭐Star数量｜简介；
+2. GitHub项目格式：项目名称（如有Star数量，则显示⭐Star数量）｜简介；不设Star数量下限，所有项目均可展示；
 3. 使用Markdown排版，两大板块：〖今日科技热点〗〖⭐GitHub热门开源项目〗；
 4. 全文控制在1800字以内，新闻最多8条，开源项目最多10个；
 5. 不要多余开场白，资讯不足如实说明。
@@ -131,7 +131,7 @@ GitHub原始数据：{str(raw_github.entries[:12]) if raw_github and raw_github.
         return None
 
 def build_fallback_report(news_feed, github_feed):
-    """当 AI 不可用时，生成简单的原始内容报告"""
+    """当 AI 不可用时，生成简单的原始内容报告（已调整显示逻辑）"""
     lines = ["# 每日科技资讯 & GitHub开源日报\n"]
     lines.append("## 📰 今日科技热点")
     if news_feed and news_feed.entries:
@@ -145,9 +145,9 @@ def build_fallback_report(news_feed, github_feed):
     lines.append("\n## ⭐ GitHub 热门开源项目")
     if github_feed and github_feed.entries:
         for i, entry in enumerate(github_feed.entries[:10], 1):
+            # entry 的 title 格式为 "项目名 ⭐123" 或只有 "项目名"
             title = entry.get("title", "无项目名")
             link = entry.get("link", "")
-            # 如果是解析 HTML 得到的数据，title 已包含 Star 信息
             lines.append(f"{i}. [{title}]({link})")
     else:
         lines.append("暂无 GitHub 热门项目")
@@ -183,8 +183,13 @@ if __name__ == "__main__":
     github_data = FakeFeed()
     github_data.entries = []
     for p in projects:
+        # 构建标题：如果有 Star 且大于 0，则显示星标；否则只显示项目名
+        if p['stars'] > 0:
+            title_with_stars = f"{p['title']} ⭐{p['stars']}"
+        else:
+            title_with_stars = p['title']  # 不显示星标
         entry = {
-            'title': f"{p['title']} ⭐{p['stars']}",
+            'title': title_with_stars,
             'link': p['link'],
             'description': p['desc']
         }
