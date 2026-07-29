@@ -92,18 +92,24 @@ def send_wxpush(app_token, uid, content):
         print(f"WxPusher 推送失败: {e}")
 
 def llm_summary(api_key, raw_news, raw_github):
-    """调用 DeepSeek API 进行智能整理"""
+    """调用 DeepSeek API 进行智能整理（已优化 Prompt）"""
     if not api_key:
         print("警告：DeepSeek API Key 未配置，将使用备用方案")
         return None
 
-    # 构建 Prompt（已移除 Star>50 的限制，改为显示星标数量）
-    prompt = f"""你是技术资讯整理助手，严格按照要求处理信息：
-1. 筛选今日高价值科技、AI、开源相关资讯，剔除广告、消费数码无关资讯，每条附带原文链接；
-2. GitHub项目格式：项目名称（如有Star数量，则显示⭐Star数量）｜简介；不设Star数量下限，所有项目均可展示；
-3. 使用Markdown排版，两大板块：〖今日科技热点〗〖⭐GitHub热门开源项目〗；
-4. 全文控制在1800字以内，新闻最多8条，开源项目最多10个；
-5. 不要多余开场白，资讯不足如实说明。
+    # 构建 Prompt（更严格的格式控制 + 保留商业动态）
+    prompt = f"""你是技术资讯整理助手，请严格按照以下要求生成日报：
+1. 〖新闻筛选与格式〗：
+   - 筛选今日与科技、AI、开源、商业科技动态相关的资讯，**保留有价值的商业动态**（如融资、产品发布），不要剔除为“非科技”。
+   - 每条新闻格式为：“数字. 标题（加粗）\\n正文摘要（不超过80字）\\n[原文链接]”，不使用任何斜体或多余符号。
+2. 〖GitHub项目格式〗：
+   - 所有项目名**不加粗、不斜体**，统一使用纯文本。
+   - 格式为：“项目名（如 star>0 则添加 ⭐数量）| 简介”。
+   - 如果项目名中包含 `*` 字符，请保留原样，但不要将其作为Markdown标记。
+3. 〖排版〗：
+   - 两大板块：〖今日科技热点〗 和 〖⭐GitHub热门开源项目〗。
+   - 全文控制在1800字以内，新闻最多8条，开源项目最多10个。
+   - 不要多余的开场白或结束语。
 
 新闻原始数据：{str(raw_news.entries[:10]) if raw_news and raw_news.entries else "暂无数据"}
 GitHub原始数据：{str(raw_github.entries[:12]) if raw_github and raw_github.entries else "暂无数据"}"""
@@ -131,24 +137,23 @@ GitHub原始数据：{str(raw_github.entries[:12]) if raw_github and raw_github.
         return None
 
 def build_fallback_report(news_feed, github_feed):
-    """当 AI 不可用时，生成简单的原始内容报告（已调整显示逻辑）"""
+    """当 AI 不可用时，生成干净的原始内容报告（格式统一）"""
     lines = ["# 每日科技资讯 & GitHub开源日报\n"]
     lines.append("## 📰 今日科技热点")
     if news_feed and news_feed.entries:
         for i, entry in enumerate(news_feed.entries[:8], 1):
             title = entry.get("title", "无标题")
             link = entry.get("link", "")
-            lines.append(f"{i}. [{title}]({link})")
+            lines.append(f"{i}. {title}\n[原文链接]({link})")
     else:
         lines.append("暂无科技资讯")
 
     lines.append("\n## ⭐ GitHub 热门开源项目")
     if github_feed and github_feed.entries:
         for i, entry in enumerate(github_feed.entries[:10], 1):
-            # entry 的 title 格式为 "项目名 ⭐123" 或只有 "项目名"
             title = entry.get("title", "无项目名")
             link = entry.get("link", "")
-            lines.append(f"{i}. [{title}]({link})")
+            lines.append(f"{i}. {title} | [链接]({link})")
     else:
         lines.append("暂无 GitHub 热门项目")
 
