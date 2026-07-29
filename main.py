@@ -4,21 +4,21 @@ import os
 import json
 
 # ===================== 配置区域 =====================
-# 备选1：使用 trending/all/daily（经典路径）
-RSS_GITHUB = "https://rsshub.app/github/trending/all/daily"
+# 科技新闻 RSS（选一个稳定的）
+RSS_NEWS = "https://36kr.com/feed"          # 36氪（推荐）
+# RSS_NEWS = "https://www.jiqizhixin.com/rss"  # 机器之心（备选）
 
-# 备选2：不加 all，直接 trending/daily
-RSS_GITHUB = "https://rsshub.app/github/trending/daily"
+# GitHub Trending RSS（只保留一个有效的）
+RSS_GITHUB = "https://rsshub.app/github/trending/daily"  # 常用路径
+# RSS_GITHUB = "https://rsshub.app/github/trending/all/daily"  # 备选
 
-# 备选3：指定语言（如 Python）
-RSS_GITHUB = "https://rsshub.app/github/trending/python/daily"
 # DeepSeek API 配置
 DEEPSEEK_BASE_URL = "https://api.deepseek.com"
 DEEPSEEK_MODEL = "deepseek-chat"   # 可选 deepseek-reasoner / deepseek-v4-pro
 
 # 推送渠道选择（二选一）
 USE_WEBHOOK = True   # True=企业微信机器人, False=WxPusher
-# ================================================================
+# ==================================================
 
 def fetch_rss(url):
     """抓取 RSS 并解析"""
@@ -63,16 +63,16 @@ def llm_summary(api_key, raw_news, raw_github):
         print("警告：DeepSeek API Key 未配置，将使用备用方案")
         return None
 
-    # 构建 Prompt
+    # 构建 Prompt（已修改 Star 条件为 >50）
     prompt = f"""你是技术资讯整理助手，严格按照要求处理信息：
 1. 筛选今日高价值科技、AI、开源相关资讯，剔除广告、消费数码无关资讯，每条附带原文链接；
-2. GitHub项目只保留Star>500的仓库；格式：项目名称 ⭐Star数量｜简介；
+2. GitHub项目只保留Star>50的仓库；格式：项目名称 ⭐Star数量｜简介；
 3. 使用Markdown排版，两大板块：〖今日科技热点〗〖⭐GitHub热门开源项目〗；
 4. 全文控制在1800字以内，新闻最多8条，开源项目最多10个；
 5. 不要多余开场白，资讯不足如实说明。
 
-新闻原始数据：{str(raw_news.entries[:10]) if raw_news else "暂无数据"}
-GitHub原始数据：{str(raw_github.entries[:12]) if raw_github else "暂无数据"}"""
+新闻原始数据：{str(raw_news.entries[:10]) if raw_news and raw_news.entries else "暂无数据"}
+GitHub原始数据：{str(raw_github.entries[:12]) if raw_github and raw_github.entries else "暂无数据"}"""
 
     headers = {
         "Authorization": f"Bearer {api_key}",
@@ -125,6 +125,14 @@ if __name__ == "__main__":
     user_uid = os.getenv("USER_UID")
     api_key = os.getenv("DEEPSEEK_API_KEY")
 
+    # 检查推送配置
+    if USE_WEBHOOK and not webhook_url:
+        print("错误：未设置 WEBHOOK_URL 环境变量")
+        exit(1)
+    if not USE_WEBHOOK and (not app_token or not user_uid):
+        print("错误：未设置 APP_TOKEN 或 USER_UID")
+        exit(1)
+
     # 抓取 RSS
     print("正在抓取科技新闻 RSS...")
     news = fetch_rss(RSS_NEWS)
@@ -144,15 +152,9 @@ if __name__ == "__main__":
 
     # 推送
     if USE_WEBHOOK:
-        if not webhook_url:
-            print("错误：未设置 WEBHOOK_URL 环境变量")
-            exit(1)
         print("正在推送到企业微信...")
         send_wecom(webhook_url, report)
     else:
-        if not app_token or not user_uid:
-            print("错误：未设置 APP_TOKEN 或 USER_UID 环境变量")
-            exit(1)
         print("正在推送到 WxPusher...")
         send_wxpush(app_token, user_uid, report)
 
