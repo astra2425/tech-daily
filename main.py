@@ -2,15 +2,12 @@ import feedparser
 import requests
 import os
 import json
+from bs4 import BeautifulSoup  # 新增导入
 
 # ===================== 配置区域 =====================
 # 科技新闻 RSS（选一个稳定的）
 RSS_NEWS = "https://36kr.com/feed"          # 36氪（推荐）
 # RSS_NEWS = "https://www.jiqizhixin.com/rss"  # 机器之心（备选）
-
-# GitHub Trending RSS（只保留一个有效的）
-RSS_GITHUB = "https://rsshub.app/github/trending/daily"  # 常用路径
-# RSS_GITHUB = "https://rsshub.app/github/trending/all/daily"  # 备选
 
 # DeepSeek API 配置
 DEEPSEEK_BASE_URL = "https://api.deepseek.com"
@@ -29,6 +26,43 @@ def fetch_rss(url):
     except Exception as e:
         print(f"RSS 抓取失败 [{url}]: {e}")
         return None
+
+def fetch_github_trending_html():
+    """直接抓取 GitHub Trending 页面，解析项目信息（替代失效的 RSSHub）"""
+    url = "https://github.com/trending"
+    try:
+        resp = requests.get(url, timeout=20)
+        resp.raise_for_status()
+        soup = BeautifulSoup(resp.text, 'html5lib')
+        articles = soup.find_all('article', class_='Box-row')
+        projects = []
+        for art in articles[:12]:
+            h2 = art.find('h2')
+            if not h2:
+                continue
+            a = h2.find('a')
+            full_name = a.get_text(strip=True) if a else '未知'
+            # 提取 Star 数
+            star_span = art.find('span', class_='d-inline-block ml-0 mr-3')
+            star_text = star_span.get_text(strip=True).replace(',', '') if star_span else '0'
+            try:
+                stars = int(star_text)
+            except:
+                stars = 0
+            # 简介
+            desc_p = art.find('p', class_='col-9')
+            desc = desc_p.get_text(strip=True) if desc_p else ''
+            projects.append({
+                'title': full_name,
+                'stars': stars,
+                'desc': desc,
+                'link': f"https://github.com/{full_name}"
+            })
+        print(f"✅ 成功解析到 {len(projects)} 个 GitHub 项目")
+        return projects
+    except Exception as e:
+        print(f"❌ GitHub Trending 解析失败: {e}")
+        return []
 
 def send_wecom(webhook_url, content):
     """推送到企业微信群机器人（Markdown 格式）"""
@@ -112,7 +146,9 @@ def build_fallback_report(news_feed, github_feed):
     if github_feed and github_feed.entries:
         for i, entry in enumerate(github_feed.entries[:10], 1):
             title = entry.get("title", "无项目名")
-            lines.append(f"{i}. {title}")
+            link = entry.get("link", "")
+            # 如果是解析 HTML 得到的数据，title 已包含 Star 信息
+            lines.append(f"{i}. [{title}]({link})")
     else:
         lines.append("暂无 GitHub 热门项目")
 
@@ -133,11 +169,26 @@ if __name__ == "__main__":
         print("错误：未设置 APP_TOKEN 或 USER_UID")
         exit(1)
 
-    # 抓取 RSS
+    # 抓取 RSS（科技新闻）
     print("正在抓取科技新闻 RSS...")
     news = fetch_rss(RSS_NEWS)
-    print("正在抓取 GitHub Trending RSS...")
-    github_data = fetch_rss(RSS_GITHUB)
+
+    # 抓取 GitHub Trending（直接解析 HTML）
+    print("正在抓取 GitHub Trending 页面...")
+    projects = fetch_github_trending_html()
+    
+    # 构造兼容 feedparser entries 格式的对象
+    class FakeFeed:
+        pass
+    github_data = FakeFeed()
+    github_data.entries = []
+    for p in projects:
+        entry = {
+            'title': f"{p['title']} ⭐{p['stars']}",
+            'link': p['link'],
+            'description': p['desc']
+        }
+        github_data.entries.append(entry)
 
     # AI 整理（如果配置了 Key）
     report = None
