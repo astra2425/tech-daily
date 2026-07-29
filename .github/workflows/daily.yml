@@ -1,0 +1,25 @@
+name: 每日科技 & GitHub 日报
+
+on:
+  schedule:
+    # 每天北京时间 9:00 执行（UTC 1:00）
+    - cron: '0 1 * * *'
+  workflow_dispatch:  # 允许手动运行
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 安装 Python 依赖
+        run: pip install feedparser requests
+
+      - name: 执行日报脚本
+        run: python main.py
+        env:
+          # 推送渠道（二选一）
+          WEBHOOK_URL: ${{ secrets.WEBHOOK_URL }}   # 企业微信机器人
+          # APP_TOKEN: ${{ secrets.APP_TOKEN }}     # WxPusher 应用 Token
+          # USER_UID: ${{ secrets.USER_UID }}       # WxPusher 用户 UID
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}  # DeepSeek API Key（可选）
