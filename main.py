@@ -3,10 +3,13 @@ import requests
 import os
 import json
 
-# ===================== 配置区域（可按需修改） =====================
-# RSS 源（可替换）
-RSS_NEWS = "https://www.jiqizhixin.com/rss"                 # 机器之心
-RSS_GITHUB = "https://rsshub.app/github/trending/all/day"  # GitHub 日榜
+# ===================== 配置区域 =====================
+# 备选 RSS 源（更稳定）
+RSS_NEWS = "https://36kr.com/feed"                    # 36氪（科技新闻）
+# 或使用 InfoQ：https://www.infoq.cn/feed
+
+RSS_GITHUB = "https://rsshub.app/github/trending/daily"  # 另一个 RSSHub 路径
+# 或使用官方 Trending（需代理，谨慎）：https://github.com/trending?since=daily
 
 # DeepSeek API 配置
 DEEPSEEK_BASE_URL = "https://api.deepseek.com"
