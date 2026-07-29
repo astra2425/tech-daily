@@ -4,13 +4,14 @@ import os
 import json
 
 # ===================== 配置区域 =====================
-# 备选 RSS 源（更稳定）
-RSS_NEWS = "https://36kr.com/feed"                    # 36氪（科技新闻）
-# 或使用 InfoQ：https://www.infoq.cn/feed
+# 备选1：使用 trending/all/daily（经典路径）
+RSS_GITHUB = "https://rsshub.app/github/trending/all/daily"
 
-RSS_GITHUB = "https://rsshub.app/github/trending/daily"  # 另一个 RSSHub 路径
-# 或使用官方 Trending（需代理，谨慎）：https://github.com/trending?since=daily
+# 备选2：不加 all，直接 trending/daily
+RSS_GITHUB = "https://rsshub.app/github/trending/daily"
 
+# 备选3：指定语言（如 Python）
+RSS_GITHUB = "https://rsshub.app/github/trending/python/daily"
 # DeepSeek API 配置
 DEEPSEEK_BASE_URL = "https://api.deepseek.com"
 DEEPSEEK_MODEL = "deepseek-chat"   # 可选 deepseek-reasoner / deepseek-v4-pro
