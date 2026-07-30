@@ -109,7 +109,7 @@ def llm_summary(api_key, raw_news, raw_github):
    - 如果项目名中包含 `*` 字符，请保留原样，但不要将其作为Markdown标记。
 3. 〖排版〗：
    - 两大板块：〖今日科技热点〗 和 〖⭐GitHub热门开源项目〗。
-   - 全文控制在3000字以内，新闻最多10条，开源项目最多15个。
+   - 全文控制在2000字以内，新闻最多10条，开源项目最多10个。
    - 不要多余的开场白或结束语。
 
 新闻原始数据：{str(raw_news.entries[:10]) if raw_news and raw_news.entries else "暂无数据"}
