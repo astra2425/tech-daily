@@ -2,18 +2,19 @@ import feedparser
 import requests
 import os
 import json
-from bs4 import BeautifulSoup
 
 # ===================== 配置区域 =====================
-# 科技新闻 RSS（选一个稳定的）
+# 科技新闻 RSS（可自由更换）
 RSS_NEWS = "https://36kr.com/feed"          # 36氪（推荐）
 # RSS_NEWS = "https://www.jiqizhixin.com/rss"  # 机器之心（备选）
+# RSS_NEWS = "https://www.infoq.cn/feed"      # InfoQ
 
-# DeepSeek API 配置
+# DeepSeek API 配置（若不需要 AI 整理，可将 USE_AI 设为 False）
+USE_AI = True   # True=使用 DeepSeek AI 整理, False=直接推送 RSS 原文
 DEEPSEEK_BASE_URL = "https://api.deepseek.com"
-DEEPSEEK_MODEL = "deepseek-chat"   # 可选 deepseek-reasoner / deepseek-v4-pro
+DEEPSEEK_MODEL = "deepseek-chat"
 
-# 推送渠道选择（二选一）
+# 推送渠道
 USE_WEBHOOK = True   # True=企业微信机器人, False=WxPusher
 # ==================================================
 
@@ -27,45 +28,13 @@ def fetch_rss(url):
         print(f"RSS 抓取失败 [{url}]: {e}")
         return None
 
-def fetch_github_trending_html():
-    """直接抓取 GitHub Trending 页面，解析项目信息（替代失效的 RSSHub）"""
-    url = "https://github.com/trending"
-    try:
-        resp = requests.get(url, timeout=20)
-        resp.raise_for_status()
-        soup = BeautifulSoup(resp.text, 'html5lib')
-        articles = soup.find_all('article', class_='Box-row')
-        projects = []
-        for art in articles[:12]:
-            h2 = art.find('h2')
-            if not h2:
-                continue
-            a = h2.find('a')
-            full_name = a.get_text(strip=True) if a else '未知'
-            # 提取 Star 数
-            star_span = art.find('span', class_='d-inline-block ml-0 mr-3')
-            star_text = star_span.get_text(strip=True).replace(',', '') if star_span else '0'
-            try:
-                stars = int(star_text)
-            except:
-                stars = 0
-            # 简介
-            desc_p = art.find('p', class_='col-9')
-            desc = desc_p.get_text(strip=True) if desc_p else ''
-            projects.append({
-                'title': full_name,
-                'stars': stars,
-                'desc': desc,
-                'link': f"https://github.com/{full_name}"
-            })
-        print(f"✅ 成功解析到 {len(projects)} 个 GitHub 项目")
-        return projects
-    except Exception as e:
-        print(f"❌ GitHub Trending 解析失败: {e}")
-        return []
-
 def send_wecom(webhook_url, content):
-    """推送到企业微信群机器人（Markdown 格式）"""
+    """推送到企业微信群机器人（Markdown 格式），自动截断过长内容"""
+    # 企业微信 Markdown 消息限制 4096 字节
+    max_bytes = 4000
+    if len(content.encode('utf-8')) > max_bytes:
+        # 按字符截断，保留尾部提示
+        content = content[:max_bytes//4] + "\n\n... (内容过长已截断)"
     body = {
         "msgtype": "markdown",
         "markdown": {"content": content}
@@ -82,7 +51,7 @@ def send_wxpush(app_token, uid, content):
     payload = {
         "appToken": app_token,
         "content": content,
-        "contentType": 3,   # 3=Markdown
+        "contentType": 3,
         "uids": [uid]
     }
     try:
@@ -91,29 +60,21 @@ def send_wxpush(app_token, uid, content):
     except Exception as e:
         print(f"WxPusher 推送失败: {e}")
 
-def llm_summary(api_key, raw_news, raw_github):
-    """调用 DeepSeek API 进行智能整理（已优化 Prompt，支持中文简介）"""
+def llm_summary(api_key, raw_news):
+    """调用 DeepSeek API 进行新闻智能整理"""
     if not api_key:
         print("警告：DeepSeek API Key 未配置，将使用备用方案")
         return None
 
-    # 构建 Prompt（新增：GitHub 简介翻译为中文）
-    prompt = f"""你是技术资讯整理助手，请严格按照以下要求生成日报：
-1. 〖新闻筛选与格式〗：
-   - 筛选今日与科技、AI、开源、商业科技动态相关的资讯，**保留有价值的商业动态**（如融资、产品发布），不要剔除为“非科技”。
-   - 每条新闻格式为：“数字. 标题（加粗）\\n正文摘要（不超过80字）\\n[原文链接]”，不使用任何斜体或多余符号。
-2. 〖GitHub项目格式〗：
-   - 所有项目名**不加粗、不斜体**，统一使用纯文本。
-   - 格式为：“项目名（如 star>0 则添加 ⭐数量）| 简介”。
-   - **项目简介需要翻译成中文**，如果原始简介为英文，请提供简洁的中文翻译。
-   - 如果项目名中包含 `*` 字符，请保留原样，但不要将其作为Markdown标记。
-3. 〖排版〗：
-   - 两大板块：〖今日科技热点〗 和 〖⭐GitHub热门开源项目〗。
-   - 全文控制在1800字以内，新闻最多8条，开源项目最多10个。
-   - 不要多余的开场白或结束语。
+    prompt = f"""你是科技资讯编辑，请将以下新闻列表整理成一份简洁的日报，要求：
+1. 筛选出与科技、AI、开源、商业科技动态相关的高价值新闻，剔除无关内容。
+2. 每条新闻用一句话概括（不超过60字），并附上原文链接。
+3. 格式为：“数字. 标题：一句话摘要 [原文链接]”
+4. 按重要性排序，最多保留 10 条。
+5. 整体排版清晰，不要多余的开场白或结束语。
 
-新闻原始数据：{str(raw_news.entries[:10]) if raw_news and raw_news.entries else "暂无数据"}
-GitHub原始数据：{str(raw_github.entries[:12]) if raw_github and raw_github.entries else "暂无数据"}"""
+新闻列表：
+{str(raw_news.entries[:15]) if raw_news and raw_news.entries else "暂无数据"}"""
 
     headers = {
         "Authorization": f"Bearer {api_key}",
@@ -137,28 +98,16 @@ GitHub原始数据：{str(raw_github.entries[:12]) if raw_github and raw_github.
         print(f"DeepSeek AI 整理失败: {e}")
         return None
 
-def build_fallback_report(news_feed, github_feed):
-    """当 AI 不可用时，生成干净的原始内容报告（简介保持英文，因无翻译能力）"""
-    lines = ["# 每日科技资讯 & GitHub开源日报\n"]
-    lines.append("## 📰 今日科技热点")
+def build_fallback_report(news_feed):
+    """当 AI 不可用时，直接推送 RSS 原始标题和链接（无摘要）"""
+    lines = ["# 📰 今日科技快讯\n"]
     if news_feed and news_feed.entries:
-        for i, entry in enumerate(news_feed.entries[:8], 1):
+        for i, entry in enumerate(news_feed.entries[:10], 1):
             title = entry.get("title", "无标题")
             link = entry.get("link", "")
             lines.append(f"{i}. {title}\n[原文链接]({link})")
     else:
         lines.append("暂无科技资讯")
-
-    lines.append("\n## ⭐ GitHub 热门开源项目")
-    if github_feed and github_feed.entries:
-        for i, entry in enumerate(github_feed.entries[:10], 1):
-            title = entry.get("title", "无项目名")
-            link = entry.get("link", "")
-            # 由于备用报告无法翻译，显示原始描述（但可以显示项目名和链接）
-            lines.append(f"{i}. {title} | [链接]({link})")
-    else:
-        lines.append("暂无 GitHub 热门项目")
-
     return "\n".join(lines)
 
 if __name__ == "__main__":
@@ -176,42 +125,18 @@ if __name__ == "__main__":
         print("错误：未设置 APP_TOKEN 或 USER_UID")
         exit(1)
 
-    # 抓取 RSS（科技新闻）
+    # 抓取 RSS
     print("正在抓取科技新闻 RSS...")
     news = fetch_rss(RSS_NEWS)
 
-    # 抓取 GitHub Trending（直接解析 HTML）
-    print("正在抓取 GitHub Trending 页面...")
-    projects = fetch_github_trending_html()
-    
-    # 构造兼容 feedparser entries 格式的对象
-    class FakeFeed:
-        pass
-    github_data = FakeFeed()
-    github_data.entries = []
-    for p in projects:
-        # 构建标题：如果有 Star 且大于 0，则显示星标；否则只显示项目名
-        if p['stars'] > 0:
-            title_with_stars = f"{p['title']} ⭐{p['stars']}"
-        else:
-            title_with_stars = p['title']  # 不显示星标
-        entry = {
-            'title': title_with_stars,
-            'link': p['link'],
-            'description': p['desc']   # 原始英文描述供 AI 翻译
-        }
-        github_data.entries.append(entry)
-
-    # AI 整理（如果配置了 Key）
+    # 生成报告
     report = None
-    if api_key:
-        print("正在调用 DeepSeek AI 整理内容...")
-        report = llm_summary(api_key, news, github_data)
-
-    # 降级方案
+    if USE_AI and api_key:
+        print("正在调用 DeepSeek AI 整理新闻...")
+        report = llm_summary(api_key, news)
     if not report:
         print("使用备用方案生成报告...")
-        report = build_fallback_report(news, github_data)
+        report = build_fallback_report(news)
 
     # 推送
     if USE_WEBHOOK:
