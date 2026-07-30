@@ -92,12 +92,12 @@ def send_wxpush(app_token, uid, content):
         print(f"WxPusher 推送失败: {e}")
 
 def llm_summary(api_key, raw_news, raw_github):
-    """调用 DeepSeek API 进行智能整理（已优化 Prompt）"""
+    """调用 DeepSeek API 进行智能整理（已优化 Prompt，支持中文简介）"""
     if not api_key:
         print("警告：DeepSeek API Key 未配置，将使用备用方案")
         return None
 
-    # 构建 Prompt（更严格的格式控制 + 保留商业动态）
+    # 构建 Prompt（新增：GitHub 简介翻译为中文）
     prompt = f"""你是技术资讯整理助手，请严格按照以下要求生成日报：
 1. 〖新闻筛选与格式〗：
    - 筛选今日与科技、AI、开源、商业科技动态相关的资讯，**保留有价值的商业动态**（如融资、产品发布），不要剔除为“非科技”。
@@ -105,6 +105,7 @@ def llm_summary(api_key, raw_news, raw_github):
 2. 〖GitHub项目格式〗：
    - 所有项目名**不加粗、不斜体**，统一使用纯文本。
    - 格式为：“项目名（如 star>0 则添加 ⭐数量）| 简介”。
+   - **项目简介需要翻译成中文**，如果原始简介为英文，请提供简洁的中文翻译。
    - 如果项目名中包含 `*` 字符，请保留原样，但不要将其作为Markdown标记。
 3. 〖排版〗：
    - 两大板块：〖今日科技热点〗 和 〖⭐GitHub热门开源项目〗。
@@ -137,7 +138,7 @@ GitHub原始数据：{str(raw_github.entries[:12]) if raw_github and raw_github.
         return None
 
 def build_fallback_report(news_feed, github_feed):
-    """当 AI 不可用时，生成干净的原始内容报告（格式统一）"""
+    """当 AI 不可用时，生成干净的原始内容报告（简介保持英文，因无翻译能力）"""
     lines = ["# 每日科技资讯 & GitHub开源日报\n"]
     lines.append("## 📰 今日科技热点")
     if news_feed and news_feed.entries:
@@ -153,6 +154,7 @@ def build_fallback_report(news_feed, github_feed):
         for i, entry in enumerate(github_feed.entries[:10], 1):
             title = entry.get("title", "无项目名")
             link = entry.get("link", "")
+            # 由于备用报告无法翻译，显示原始描述（但可以显示项目名和链接）
             lines.append(f"{i}. {title} | [链接]({link})")
     else:
         lines.append("暂无 GitHub 热门项目")
@@ -196,7 +198,7 @@ if __name__ == "__main__":
         entry = {
             'title': title_with_stars,
             'link': p['link'],
-            'description': p['desc']
+            'description': p['desc']   # 原始英文描述供 AI 翻译
         }
         github_data.entries.append(entry)
 
